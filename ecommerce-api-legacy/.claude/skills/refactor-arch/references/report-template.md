@@ -8,7 +8,7 @@ O relatório é impresso no terminal **e** salvo em `reports/audit-<nome-do-proj
 2. **Localização exata**: `File: caminho/relativo.ext:linha-inicio-linha-fim` (ou `:linha` para uma única linha). Linhas devem ser conferidas no arquivo — nunca aproximadas. Várias ocorrências: `File: a.py:10-12, 40, 77-80`.
 3. **Description**: o que está errado **neste código** (cite nomes reais de função/variável), não a definição genérica do catálogo.
 4. **Impact**: consequência concreta (o que um atacante/mantenedor/usuário sofre).
-5. **Recommendation**: a transformação do playbook que será aplicada (cite o `P<n>`).
+5. **Recommendation**: a transformação do playbook que será aplicada (cite o `P<n>`). Deve descrever a correção **concreta e completa** da Fase 3; em findings de segurança/autorização (AP-04) não use "risco residual" nem "próximo passo" no lugar da correção.
 6. **Summary** deve bater com a lista de findings (contagem por severidade e total).
 7. **APIs deprecated** entram como findings `[MEDIUM]`/`[LOW]` com o título `Deprecated API: <nome>` e a API moderna na Recommendation. Se não houver nenhuma, escreva a linha `Deprecated APIs: none detected` antes do total.
 8. Idioma: descrições em português; cabeçalhos e rótulos em inglês, como abaixo.

@@ -472,7 +472,26 @@ def require_admin_token(fn):
 def reset_db(): ...
 ```
 - **Utilitário perigoso** (executa SQL/código arbitrário, reseta/apaga dados em massa): desabilitado por padrão — só responde com token configurado; SQL arbitrário restrito a `SELECT` em conexão somente-leitura (ou removido).
-- **Rota de negócio sem autenticação** (ex.: relatório financeiro, `DELETE /users/:id`): introduzir um sistema de autenticação mudaria o contrato público, então aplique proteção **opt-in** — se `ADMIN_TOKEN` estiver configurado a rota exige o header; se não, segue aberta e o boot registra um *warning*. Liste o risco residual no resumo da Fase 3 e recomende autenticação real (JWT/sessão) como próximo passo.
+- **Escalonamento de privilégio (mass assignment)** — **obrigatório, nunca deixar como risco residual**: campos de privilégio (`role`, `is_admin`, `permissions`, `active`) enviados em cadastro/atualização **não são confiáveis**. Em cadastro anônimo, ignore o valor enviado e grave o papel padrão; só honre o campo se o chamador estiver autenticado **e** for admin. Alterar papel/status de outro usuário exige admin autenticado (403 caso contrário).
+  ```python
+  # Antes: qualquer cliente anônimo se cadastra como admin
+  role = data.get('role', 'user')
+
+  # Depois
+  role = data.get('role', DEFAULT_ROLE) if is_admin_request() else DEFAULT_ROLE   # ignora o role do anônimo
+  ```
+- **Autenticação que existe mas não é verificada** (login emite token e nenhuma rota o valida): implemente a **verificação** do token (assinatura + expiração) e um decorator `require_admin` (header `Authorization: Bearer <token>`; 401 sem token/token inválido, 403 se não for admin), e aplique-o às operações destrutivas/administrativas (remover usuário, mudar role, endpoints `/admin/*`).
+  ```python
+  def require_admin(view):
+      @wraps(view)
+      def wrapper(*a, **kw):
+          user = current_user()                 # verifica assinatura/expiração do token
+          if user is None: raise UnauthorizedError('Autenticação necessária')
+          if user.role != 'admin': raise ForbiddenError('Acesso restrito a administradores')
+          return view(*a, **kw)
+      return wrapper
+  ```
+- **Rota de negócio de leitura sem autenticação** (ex.: relatório financeiro): se não existir sistema de autenticação, exigir login em todas as rotas mudaria o contrato público; aplique proteção **opt-in** (`ADMIN_TOKEN` configurado ⇒ header exigido; senão segue aberta e o boot registra *warning*). Só este caso — leitura sem sistema de auth prévio — pode ser listado como risco residual no resumo da Fase 3. Operações de escrita/privilégio **não** se enquadram aqui.
 - Respostas: serializers com *allowlist* de campos — remova `password/senha/hash`, `secret_key`, caminhos, flags de debug.
 - Logs: mascare dados sensíveis (`**** **** **** 4444`), nunca registre segredo/chave.
 - Se a rota for parte do contrato, ela continua existindo (responde 403 sem token) — registre a mudança no resumo.

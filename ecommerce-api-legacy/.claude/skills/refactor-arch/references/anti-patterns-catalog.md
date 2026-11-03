@@ -34,9 +34,10 @@ Regra de desempate: na dúvida entre duas severidades, escolha a **maior** se ho
 - **Como medir**: para cada arquivo, marque quais camadas da seção 7 de `project-analysis.md` ele contém.
 - **Playbook**: P4 (e P5 para a regra de negócio).
 
-### AP-04 — Endpoint perigoso sem autenticação/autorização
-- **Sinais**: rota que executa SQL recebido do cliente (`/admin/query`), apaga/reseta dados (`/admin/reset-db`), ou expõe operações administrativas sem checar identidade/papel; rota `DELETE`/`PUT` sem qualquer verificação de dono ou role.
-- **Busca**: rotas com `admin`, `reset`, `debug`, `query`, `exec`, `eval` no caminho.
+### AP-04 — Endpoint perigoso sem autenticação/autorização (inclui escalonamento de privilégio)
+- **Sinais**: rota que executa SQL recebido do cliente (`/admin/query`), apaga/reseta dados (`/admin/reset-db`), ou expõe operações administrativas sem checar identidade/papel; rota `DELETE`/`PUT` sem qualquer verificação de dono ou role; **mass assignment de privilégio**: campo `role`/`is_admin`/`admin`/`permissions`/`active` lido do corpo de um cadastro ou atualização anônimos (`data.get('role', ...)` em `POST /users`); "token" de login previsível ou não verificado (`'fake-jwt-token-' + id`, token emitido mas nenhuma rota o valida).
+- **Busca**: rotas com `admin`, `reset`, `debug`, `query`, `exec`, `eval` no caminho; `grep -rniE "role|is_?admin|permission" ` em handlers de cadastro/atualização; `grep -rniE "token"` e conferir se existe verificação.
+- **Regra para o relatório**: a *Recommendation* deve descrever a correção completa que a Fase 3 **vai aplicar** (ignorar campos de privilégio vindos de chamador não autenticado/não-admin, exigir token verificado e papel admin nas operações administrativas). Não registre autorização como "risco residual" quando houver correção mínima viável sem quebrar o contrato (ver P13).
 - **Playbook**: P13.
 
 ### AP-05 — Armazenamento inseguro de senha

@@ -78,7 +78,7 @@ Leia `references/mvc-guidelines.md` e `references/refactoring-playbook.md`.
 Escolha a estrutura-alvo (A: sem camadas → `src/`; B: já em camadas → evoluir no lugar) conforme `mvc-guidelines.md` e liste, para cada finding, o padrão `P<n>` que o resolve. Adapte ao contexto: um projeto parcialmente organizado **não** recebe a mesma transformação de um monolito.
 
 ### 3.2 Executar (nesta ordem; rode o baseline após cada bloco grande)
-1. Config e segredos (P1) → segurança de dados (P2, P3, P13).
+1. Config e segredos (P1) → segurança de dados (P2, P3, P13). **Autorização é parte da Fase 3, não risco residual**: todo finding AP-04 deve sair com (a) campos de privilégio (`role`, `is_admin`...) enviados por chamador anônimo/não-admin **ignorados**, (b) token de login realmente **verificado** quando o projeto já emite um, e (c) operações administrativas/destrutivas protegidas por `require_admin` (P13). Só leitura sem sistema de auth prévio pode ficar como risco residual.
 2. Estrutura MVC: models, controllers, rotas, entry point (P4, P5, P6).
 3. Erros centralizados, validação/serialização únicas (P8, P9).
 4. Performance e integridade (P7, P10, P14).
@@ -90,6 +90,7 @@ Mantenha o comando de execução original (`python app.py`, `npm start`). Remova
 1. **Boot**: instale deps e suba a aplicação; confirme no log/porta que iniciou sem erro nem warning novo de deprecation.
 2. **Endpoints**: repita o baseline contra a versão refatorada e compare com o original: mesmo status e mesma estrutura de corpo. Diferenças só são aceitas se forem mudanças deliberadas (segurança/integridade) — liste cada uma.
 3. **Anti-patterns**: reexecute os sinais do catálogo (`grep`) nos arquivos novos e confirme que os findings CRITICAL/HIGH/MEDIUM foram eliminados; reporte honestamente o que restou e por quê.
+3b. **Autorização**: se houve finding AP-04, teste de verdade a tentativa de abuso — cadastro anônimo com `"role":"admin"` deve resultar em papel padrão; chamada administrativa sem token → 401, com token de não-admin → 403, com token de admin → sucesso. Registre os resultados no resumo.
 4. **Estrutura**: confira o checklist de `mvc-guidelines.md` seção 3.
 5. Se algo falhar, corrija e repita a validação. Não declare sucesso sem evidência.
 
