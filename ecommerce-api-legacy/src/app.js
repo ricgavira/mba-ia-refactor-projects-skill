@@ -39,7 +39,7 @@ async function createApp(config = settings) {
     });
 
     if (!config.adminToken) {
-        logger.warn('ADMIN_TOKEN não configurado: rotas administrativas estão abertas.');
+        logger.warn('ADMIN_TOKEN não configurado: rotas administrativas estão desabilitadas.');
     }
 
     const app = express();

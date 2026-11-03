@@ -491,10 +491,8 @@ def reset_db(): ...
           return view(*a, **kw)
       return wrapper
   ```
-- **Rota de negócio de leitura sem autenticação** (ex.: relatório financeiro): se não existir sistema de autenticação, exigir login em todas as rotas mudaria o contrato público; aplique proteção **opt-in** (`ADMIN_TOKEN` configurado ⇒ header exigido; senão segue aberta e o boot registra *warning*). Só este caso — leitura sem sistema de auth prévio — pode ser listado como risco residual no resumo da Fase 3. Operações de escrita/privilégio **não** se enquadram aqui.
-- Respostas: serializers com *allowlist* de campos — remova `password/senha/hash`, `secret_key`, caminhos, flags de debug.
-- Logs: mascare dados sensíveis (`**** **** **** 4444`), nunca registre segredo/chave.
-- Se a rota for parte do contrato, ela continua existindo (responde 403 sem token) — registre a mudança no resumo.
+- **Rota administrativa ou destrutiva sem sistema de autenticação no projeto** (caminho `/admin/...`, `DELETE`, relatório financeiro, remoção de usuário): proteja com token de serviço **falhando fechado** — sem `ADMIN_TOKEN` configurado a rota responde 403 (desabilitada); com ele, ausência do header `X-Admin-Token` → 401 e token incorreto → 403; compare com `timingSafeEqual`/`hmac.compare_digest`. Isso muda o contrato dessas rotas de propósito: liste-o em *Deliberate behavior changes* e documente `ADMIN_TOKEN` no `.env.example`. **Não** use "opt-in" (rota aberta quando a variável não existe).
+- **Rota de leitura comum sem autenticação** (listagens públicas do domínio): exigir login em tudo mudaria o contrato inteiro; só este caso pode ser listado como risco residual no resumo da Fase 3. Operações de escrita, privilégio, remoção e rotas administrativas **não** se enquadram aqui.
 
 ---
 

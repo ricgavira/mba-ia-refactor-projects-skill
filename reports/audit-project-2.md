@@ -49,7 +49,7 @@ Recommendation: Separar em config/database/models/services/controllers/views/mid
 File: src/AppManager.js:80-129, 131-137
 Description: `GET /api/admin/financial-report` expõe receita e nomes de alunos e `DELETE /api/users/:id` apaga qualquer usuário, ambos sem qualquer verificação de identidade.
 Impact: Qualquer cliente lê dados financeiros e remove contas.
-Recommendation: Middleware `requireAdminToken` opt-in (exige `X-Admin-Token` quando `ADMIN_TOKEN` está configurado; warning no boot quando não está) mantendo o contrato (Playbook P13).
+Recommendation: Aplicar na Fase 3 (não fica como risco residual): middleware `requireAdminToken` que **falha fechado** — sem `ADMIN_TOKEN` configurado as duas rotas ficam desabilitadas (403); com ele, header `X-Admin-Token` ausente → 401 e incorreto → 403, comparação em tempo constante (Playbook P13).
 
 ### [CRITICAL] AP-05 — Armazenamento inseguro de senha
 File: src/utils.js:17-23, src/AppManager.js:18, 68

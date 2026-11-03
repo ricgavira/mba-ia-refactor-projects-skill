@@ -102,8 +102,8 @@ Distribuído pela escala do enunciado: **CRITICAL** (segredos, SQL injection, Go
 
 ### Desafios e como foram resolvidos
 
-- **Endpoint perigoso vs. contrato público.** Bloquear `/admin/query` é óbvio; bloquear `GET /api/admin/financial-report` quebraria o contrato. Resolvi no P13: utilitário perigoso fica *desabilitado por padrão*; rota de **leitura** sem sistema de auth prévio recebe proteção **opt-in** (`ADMIN_TOKEN`). Já privilégio e operações destrutivas **não** podem ficar como risco residual (ver abaixo).
-- **Revisão do avaliador: autorização como risco residual.** A primeira versão deixava `POST /users` aceitando `role` de anônimos e o token sem verificação, apenas reportado como risco. Corrigi na skill (catálogo AP-04, playbook P13, `SKILL.md` 3.2/3.3b e template do relatório) e reexecutei no projeto 3: cadastro anônimo ignora `role`; token é verificado; `DELETE /users/<id>` e mudança de `role`/`active` exigem admin autenticado.
+- **Endpoint perigoso vs. contrato público.** Bloquear `/admin/query` é óbvio; bloquear `GET /api/admin/financial-report` quebraria o contrato. Resolvi no P13: utilitário perigoso fica *desabilitado por padrão*; rotas administrativas/destrutivas sem sistema de auth prévio (P2) **falham fechadas** com `ADMIN_TOKEN`; privilégio e operações destrutivas **não** ficam como risco residual (ver abaixo).
+- **Revisão do avaliador: autorização como risco residual.** A primeira versão deixava `POST /users` aceitando `role` de anônimos e o token sem verificação, apenas reportado como risco. Corrigi na skill (catálogo AP-04, playbook P13, `SKILL.md` 3.2/3.3b e template do relatório) e reexecutei no projeto 3: cadastro anônimo ignora `role`; token é verificado; `DELETE /users/<id>` e mudança de `role`/`active` exigem admin autenticado. Na sequência apliquei a mesma regra revisada ao projeto 2 (token de serviço, falha fechada).
 - **`datetime.utcnow()` vs. datetimes naive no SQLite.** Trocar por `now(timezone.utc)` quebra comparações com valores gravados sem tzinfo; o playbook (P11) manda centralizar em `utc_now()` que remove o `tzinfo`.
 - **Atomicidade com uma única conexão SQLite no Node.** `BEGIN/COMMIT` de requests concorrentes se misturariam; o `Database.transaction()` serializa transações (P14). Validado com 30 checkouts concorrentes.
 - **Ordem do relatório não determinística** no original (callbacks): a versão com `JOIN` + `ORDER BY` é determinística (diferença registrada).
@@ -178,7 +178,7 @@ Método: subi cada app **original** (cópia em pasta temporária), chamei todos 
 
 - *Todos:* respostas de erro/404 padronizadas em JSON por um handler central; 500 devolve mensagem genérica (detalhe só no log).
 - *P1:* `senha` e `secret_key`/`db_path`/`debug` removidos das respostas; SQL injection no login bloqueada (401); `/admin/reset-db` e `/admin/query` retornam 403 sem `ADMIN_TOKEN` (com token, `/admin/query` só aceita `SELECT` em conexão somente-leitura); `PUT /pedidos/<id>/status` de pedido inexistente → 404; validação de tipos → 400 em vez de 500.
-- *P2:* cartão recusado **não cria mais usuário órfão**; `pwd` obrigatório para novo usuário (sem senha default); `DELETE /api/users/:id` remove matrículas e pagamentos (e 404 se não existir); ordem dos alunos no relatório agora determinística.
+- *P2:* `GET /api/admin/financial-report` e `DELETE /api/users/:id` exigem `ADMIN_TOKEN`: sem a variável → 403 (desabilitadas); sem header → 401; token errado → 403. Cartão recusado **não cria mais usuário órfão**; `pwd` obrigatório para novo usuário (sem senha default); `DELETE /api/users/:id` remove matrículas e pagamentos (e 404 se não existir); ordem dos alunos no relatório agora determinística.
 - *P3:* `password` removido de todas as respostas; `fake-jwt-token-N` → token assinado **e verificado**; cadastro anônimo com `role` → papel padrão `user` (role inválido de anônimo é ignorado em vez de 400); `DELETE /users/<id>` e alteração de `role`/`active` em `PUT /users/<id>` → 401 sem token / 403 sem admin; `DELETE /categories/<id>` anula `category_id` das tasks; entradas inválidas → 400 em vez de 500; cor de categoria validada.
 
 **Logs (trechos)**
@@ -204,7 +204,7 @@ Marcado para os 3 projetos (✓ = verificado por comando executado):
 ### Limitações honestas (risco residual)
 
 - **Projeto 3:** as demais rotas (tasks, categorias, relatórios, leitura de usuários) seguem abertas a anônimos, como no original; autorização foi aplicada às operações de **privilégio e destrutivas de usuário** (cadastro com `role`, mudança de `role`/`active`, `DELETE /users`). Exigir login em todas as rotas mudaria o contrato público inteiro.
-- **Projeto 2:** `GET /api/admin/financial-report` e `DELETE /api/users/:id` só são protegidos se `ADMIN_TOKEN` estiver configurado (opt-in); a API não tem sistema de login, e a skill revisada agora trata isso como achado a corrigir numa próxima execução.
+- **Projeto 2:** não há sistema de login; as rotas administrativas usam token de serviço (`ADMIN_TOKEN`, falha fechada). Autenticação por usuário seria um próximo passo se a API ganhar login.
 - Seeds de desenvolvimento têm senhas default configuráveis por env (`SEED_*`), mantidas só para o login de exemplo continuar funcionando.
 - `NotificationService` (P3) segue sem chamadores, como no original — só teve as credenciais removidas.
 - Não há testes automatizados no repositório; a evidência é o smoke comparativo descrito acima.
@@ -243,8 +243,8 @@ A skill imprime a Fase 1, grava `reports/audit-<sufixo>.md`, imprime o relatóri
 ```bash
 # 1 — http://localhost:5000     (admin: defina ADMIN_TOKEN para habilitar /admin/*)
 cd code-smells-project && pip install -r requirements.txt && python app.py
-# 2 — http://localhost:3000     (exemplos em api.http)
-cd ecommerce-api-legacy && npm install && npm start
+# 2 — http://localhost:3000     (exemplos em api.http; rotas /api/admin e DELETE exigem ADMIN_TOKEN + header X-Admin-Token)
+cd ecommerce-api-legacy && npm install && ADMIN_TOKEN=troque-me npm start
 # 3 — http://localhost:5000
 cd task-manager-api && pip install -r requirements.txt && python seed.py && python app.py
 ```
