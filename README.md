@@ -55,7 +55,7 @@ Feita lendo todo o código antes de criar a skill. Linhas referem-se aos arquivo
 |---|---|---|---|
 | CRITICAL | `User.to_dict()` devolve o hash da senha em `GET /users/<id>`, `POST /users`, `/login` | `models/user.py:16-25` | Hash trafega pela API |
 | CRITICAL | Senha com `md5` sem sal | `models/user.py:27-32` | Quebrável em segundos |
-| CRITICAL | `SECRET_KEY` e senha SMTP hardcoded; login devolve `fake-jwt-token-<id>`; qualquer cliente cria/promove `admin` | `app.py:13`, `notification_service.py:7-10`, `user_routes.py:52,119,210` | Segredos no Git, token forjável, escalonamento de privilégio |
+| CRITICAL | `SECRET_KEY` e senha SMTP hardcoded; login devolve `fake-jwt-token-<id>`; qualquer cliente cria/promove `admin` | `app.py:13`, `notification_service.py:7-10`, `user_routes.py:52,119,210` | Segredos no Git, token forjável e **não verificado**, escalonamento de privilégio (cadastro anônimo vira `admin`) |
 | HIGH | Lógica de negócio, acesso a dados e serialização dentro das rotas; `report_routes.py` também hospeda `/categories` | `routes/*.py` | Sem camada de controllers; regra irreutilizável |
 | HIGH | `debug=True`/`0.0.0.0` fixos; `db.create_all()` e `app` global executados no import | `app.py:30-34` | Debugger exposto; sem como criar instâncias de teste |
 | MEDIUM | N+1: `User.query.get`/`Category.query.get` por task, `len(u.tasks)`, count por categoria/usuário | `task_routes.py:42,51`, `user_routes.py:22`, `report_routes.py:56,163` | Queries crescem com os dados |
@@ -102,7 +102,8 @@ Distribuído pela escala do enunciado: **CRITICAL** (segredos, SQL injection, Go
 
 ### Desafios e como foram resolvidos
 
-- **Endpoint perigoso vs. contrato público.** Bloquear `/admin/query` é óbvio; bloquear `GET /api/admin/financial-report` quebraria o contrato. Resolvi no P13: utilitário perigoso fica *desabilitado por padrão*; rota de negócio sem auth recebe proteção **opt-in** (`ADMIN_TOKEN`) e o risco residual é reportado.
+- **Endpoint perigoso vs. contrato público.** Bloquear `/admin/query` é óbvio; bloquear `GET /api/admin/financial-report` quebraria o contrato. Resolvi no P13: utilitário perigoso fica *desabilitado por padrão*; rota de **leitura** sem sistema de auth prévio recebe proteção **opt-in** (`ADMIN_TOKEN`). Já privilégio e operações destrutivas **não** podem ficar como risco residual (ver abaixo).
+- **Revisão do avaliador: autorização como risco residual.** A primeira versão deixava `POST /users` aceitando `role` de anônimos e o token sem verificação, apenas reportado como risco. Corrigi na skill (catálogo AP-04, playbook P13, `SKILL.md` 3.2/3.3b e template do relatório) e reexecutei no projeto 3: cadastro anônimo ignora `role`; token é verificado; `DELETE /users/<id>` e mudança de `role`/`active` exigem admin autenticado.
 - **`datetime.utcnow()` vs. datetimes naive no SQLite.** Trocar por `now(timezone.utc)` quebra comparações com valores gravados sem tzinfo; o playbook (P11) manda centralizar em `utc_now()` que remove o `tzinfo`.
 - **Atomicidade com uma única conexão SQLite no Node.** `BEGIN/COMMIT` de requests concorrentes se misturariam; o `Database.transaction()` serializa transações (P14). Validado com 30 checkouts concorrentes.
 - **Ordem do relatório não determinística** no original (callbacks): a versão com `JOIN` + `ORDER BY` é determinística (diferença registrada).
@@ -171,14 +172,14 @@ Método: subi cada app **original** (cópia em pasta temporária), chamei todos 
 |---|---|---|---|---|
 | 1 | ✓ sem erro nem warning | 43/43 | 24 | 19, todas deliberadas |
 | 2 | ✓ | 9/9 | 3 | 6, todas deliberadas |
-| 3 | ✓ (`-W error::DeprecationWarning`) | 52/52 | 50 | 2 (token assinado; 404 em JSON) |
+| 3 | ✓ (`-W error::DeprecationWarning`) | 52/52 | 44 | 8, todas deliberadas (token assinado; 404 em JSON; role/DELETE/active exigem autorização; `/reports/summary` muda por reflexo) |
 
 **Mudanças deliberadas de comportamento**
 
 - *Todos:* respostas de erro/404 padronizadas em JSON por um handler central; 500 devolve mensagem genérica (detalhe só no log).
 - *P1:* `senha` e `secret_key`/`db_path`/`debug` removidos das respostas; SQL injection no login bloqueada (401); `/admin/reset-db` e `/admin/query` retornam 403 sem `ADMIN_TOKEN` (com token, `/admin/query` só aceita `SELECT` em conexão somente-leitura); `PUT /pedidos/<id>/status` de pedido inexistente → 404; validação de tipos → 400 em vez de 500.
 - *P2:* cartão recusado **não cria mais usuário órfão**; `pwd` obrigatório para novo usuário (sem senha default); `DELETE /api/users/:id` remove matrículas e pagamentos (e 404 se não existir); ordem dos alunos no relatório agora determinística.
-- *P3:* `password` removido de todas as respostas; `fake-jwt-token-N` → token assinado; `DELETE /categories/<id>` anula `category_id` das tasks; entradas inválidas → 400 em vez de 500; cor de categoria validada.
+- *P3:* `password` removido de todas as respostas; `fake-jwt-token-N` → token assinado **e verificado**; cadastro anônimo com `role` → papel padrão `user` (role inválido de anônimo é ignorado em vez de 400); `DELETE /users/<id>` e alteração de `role`/`active` em `PUT /users/<id>` → 401 sem token / 403 sem admin; `DELETE /categories/<id>` anula `category_id` das tasks; entradas inválidas → 400 em vez de 500; cor de categoria validada.
 
 **Logs (trechos)**
 ```
@@ -202,7 +203,8 @@ Marcado para os 3 projetos (✓ = verificado por comando executado):
 
 ### Limitações honestas (risco residual)
 
-- **Projetos 2 e 3:** rotas de negócio continuam sem autenticação obrigatória (P2 tem proteção opt-in por `ADMIN_TOKEN`; P3 emite token assinado mas nenhuma rota o exige). Exigir auth mudaria o contrato público; fica recomendado como próximo passo.
+- **Projeto 3:** as demais rotas (tasks, categorias, relatórios, leitura de usuários) seguem abertas a anônimos, como no original; autorização foi aplicada às operações de **privilégio e destrutivas de usuário** (cadastro com `role`, mudança de `role`/`active`, `DELETE /users`). Exigir login em todas as rotas mudaria o contrato público inteiro.
+- **Projeto 2:** `GET /api/admin/financial-report` e `DELETE /api/users/:id` só são protegidos se `ADMIN_TOKEN` estiver configurado (opt-in); a API não tem sistema de login, e a skill revisada agora trata isso como achado a corrigir numa próxima execução.
 - Seeds de desenvolvimento têm senhas default configuráveis por env (`SEED_*`), mantidas só para o login de exemplo continuar funcionando.
 - `NotificationService` (P3) segue sem chamadores, como no original — só teve as credenciais removidas.
 - Não há testes automatizados no repositório; a evidência é o smoke comparativo descrito acima.

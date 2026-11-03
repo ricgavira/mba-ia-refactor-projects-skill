@@ -5,6 +5,7 @@ from flask import jsonify, request
 from config.constants import DEFAULT_ROLE
 from database import commit, db
 from errors import ConflictError, ForbiddenError, NotFoundError, UnauthorizedError, ValidationError
+from middlewares.auth import current_user, is_admin_request, require_admin
 from models.task import Task
 from models.user import User
 from services.token_service import generate_token
@@ -51,7 +52,8 @@ def get_user(user_id):
 def create_user():
     data = require_json_object(request.get_json(silent=True))
     name, email, password = data.get('name'), data.get('email'), data.get('password')
-    role = data.get('role', DEFAULT_ROLE)
+    # Cadastro público: o role enviado só vale para um admin autenticado; para anônimos é ignorado.
+    role = data.get('role', DEFAULT_ROLE) if is_admin_request() else DEFAULT_ROLE
 
     if not name:
         raise ValidationError('Nome é obrigatório')
@@ -75,6 +77,11 @@ def create_user():
 def update_user(user_id):
     user = _get_user_or_404(user_id)
     data = require_json_object(request.get_json(silent=True))
+    if ('role' in data or 'active' in data) and not is_admin_request():
+        # papel e status só podem ser alterados por um admin autenticado
+        if current_user() is None:
+            raise UnauthorizedError('Autenticação necessária')
+        raise ForbiddenError('Acesso restrito a administradores')
 
     if 'name' in data:
         if not isinstance(data['name'], str) or not data['name']:
@@ -99,6 +106,7 @@ def update_user(user_id):
     return jsonify(user.to_dict()), 200
 
 
+@require_admin
 def delete_user(user_id):
     user = _get_user_or_404(user_id)
     for task in Task.list_by_user(user_id):  # tasks do usuário são removidas junto, na mesma transação

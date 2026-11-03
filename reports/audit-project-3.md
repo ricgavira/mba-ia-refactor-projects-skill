@@ -45,11 +45,11 @@ Description: `SECRET_KEY = 'super-secret-key-123'` fixo no entry point; `Notific
 Impact: Segredos de sessão e credencial de e-mail versionados no Git.
 Recommendation: Ler de variáveis de ambiente em `config/settings.py`; serviço recebe a configuração por injeção (Playbook P1).
 
-### [CRITICAL] AP-04 — Autenticação simulada e rotas sem controle de acesso
-File: routes/user_routes.py:185-211, 42-72, 92-132, 134-151
-Description: `POST /login` devolve `'fake-jwt-token-' + str(user.id)` — token previsível e forjável por qualquer um; nenhuma rota exige autenticação, e `POST /users` / `PUT /users/<id>` aceitam `role: "admin"` de qualquer cliente (escalonamento de privilégio); `DELETE /users/<id>` apaga usuário e todas as suas tasks sem checar quem pede.
-Impact: Qualquer pessoa se torna admin, apaga contas e forja o "token".
-Recommendation: Token assinado (itsdangerous, já dependência do Flask) com expiração; risco de autorização das demais rotas é reportado como residual pois exigir auth muda o contrato (Playbook P13).
+### [CRITICAL] AP-04 — Escalonamento de privilégio e autenticação simulada
+File: routes/user_routes.py:52, 71-72, 74-78, 119-122, 134-151, 185-211
+Description: `POST /users` (anônimo) lê `role` do corpo e grava `admin`/`manager` sem checar quem chama (mass assignment: qualquer cliente se cadastra como admin); `PUT /users/<id>` também aceita `role` e `active` de qualquer chamador; `DELETE /users/<id>` apaga o usuário e todas as suas tasks sem identificar quem pede; `POST /login` devolve `'fake-jwt-token-' + str(user.id)` — token previsível, e nenhuma rota verifica token algum.
+Impact: Qualquer pessoa vira administrador com um único `POST`, promove outras contas, apaga usuários e forja o "token".
+Recommendation: Aplicar na Fase 3 (não fica como risco residual) — (1) cadastro anônimo **ignora** o `role` enviado e grava o papel padrão; só um admin autenticado pode definir papel; (2) token assinado com expiração **e verificação real** (`Authorization: Bearer`), via `middlewares/auth.py`; (3) `require_admin` em `DELETE /users/<id>` e exigência de admin autenticado para alterar `role`/`active` em `PUT /users/<id>` (401 sem token, 403 sem papel admin) (Playbook P13).
 
 ### [CRITICAL] AP-05 — Armazenamento inseguro de senha
 File: models/user.py:27-32
